@@ -1,10 +1,16 @@
-from typing import Any, Dict, List, Tuple
-import plotly.graph_objects as go
-import plotly.express as px
+from typing import Dict, Tuple
 import pandas as pd
 import numpy as np
 import math
 import random
+from PIL import Image
+
+import sys
+import os
+sys.path.append(os.path.abspath('.'))
+
+from src.graphics import show_animation
+
 
 MOUNTAINS = [
     'https://raw.githubusercontent.com/plotly/datasets/master/api_docs/mt_bruno_elevation.csv',
@@ -25,6 +31,8 @@ ACTORS = {
 }
 
 NUM_EPOCHS = 100
+
+DESIRED_SIZE = 100
 
 
 def next_step(x:int,y:int,z_map:pd.DataFrame):
@@ -76,57 +84,15 @@ def generate_steps(actors: Dict[str,Dict], z_data: pd.DataFrame, epochs: int) ->
             actors[actor]['history']['z'].append(z)
 
 
-def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict], 
-                    title:str='Snowboarders',
-                    width: int = 1200, height: int = 720, 
-                    margin: Dict[Any,int] = dict(l=65, r=50, b=65, t=90)) -> None:
-    '''
-    Creates the map and animation visualization and shows them.
-    '''
-    # Draw actors
-    actors_dfs = []
-
-    for actor in actors:
-        # Create a dataframe from the history of the actor's position
-        df = pd.DataFrame.from_dict(actors[actor]['history'])
-        # Add actor name to the dataframe
-        df['actor'] = actor
-        df['size'] = 10
-        # Append to list to stack later
-        actors_dfs.append(df)
-    
-    # Concatenate all dictionaries
-    actors_df = pd.concat(actors_dfs)
-
-    # Create an animated 3D scatter plot
-    fig = px.scatter_3d(actors_df, x='x', y='y', z='z',
-        color='actor', animation_group='actor',
-        animation_frame='epoch', hover_name='actor', 
-        size='size', size_max=25
-    )
-    
-    # Add map background + contours on top or bottom axis
-    fig = fig.add_trace(
-        go.Surface(
-            z=z_data,
-            colorbar_x=-0.1,
-            contours_z=dict(
-                show=True, usecolormap=True, 
-                highlightcolor="limegreen", 
-                project_z=True
-            )
-        )
-    )
-
-    # Finally, display the whole figure
-    fig.update_layout(title=title, autosize=False,
-                        width=width, height=height,
-                        margin=margin).show()
-
-
 if __name__ == '__main__':
     # Use a random mountain
     z_data = pd.read_csv(MOUNTAINS[random.randint(0, len(MOUNTAINS)-1)])
+    # If needed resize the data by interpolation
+    z_array = np.array(Image.fromarray(z_data.to_numpy(dtype=np.float32)).resize(
+        (DESIRED_SIZE, DESIRED_SIZE), resample=Image.BILINEAR)
+    )
+    # Recreate dataframe from rescaled features (range [0,DESIRED_SIZE])
+    z_data = pd.DataFrame(z_array / np.max(z_array) * DESIRED_SIZE)
     # Compute steps for actors
     generate_steps(ACTORS, z_data, NUM_EPOCHS)
     # Produce and show final animation
