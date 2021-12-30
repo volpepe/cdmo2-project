@@ -10,29 +10,8 @@ import os
 sys.path.append(os.path.abspath('.'))
 
 from src.graphics import show_animation
-
-
-MOUNTAINS = [
-    'https://raw.githubusercontent.com/plotly/datasets/master/api_docs/mt_bruno_elevation.csv',
-    'https://raw.githubusercontent.com/plotly/datasets/master/volcano.csv'
-]
-
-ACTORS = {
-    'alice': {
-    },
-    'bob': {
-    },
-    'carl': {
-    },
-    'david': {
-    },
-    'ed': {
-    }
-}
-
-NUM_EPOCHS = 100
-
-DESIRED_SIZE = 100
+from src.constants import ACTORS, DESIRED_SIZE, \
+    MOUNTAINS, NUM_EPOCHS
 
 
 def next_step(x:int,y:int,z_map:pd.DataFrame):

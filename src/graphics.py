@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict], 
-                    title:str='Snowboarders',
+                    title:str='Mountain Climbers',
                     width: int = 1200, height: int = 720, 
                     margin: Dict[Any,int] = dict(l=100, r=100, b=100, t=100)) -> None:
     '''
@@ -18,13 +18,13 @@ def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict],
         df = pd.DataFrame.from_dict(actors[actor]['history'])
         # Add actor name to the dataframe
         df['actor'] = actor
-        df['z'] = df['z'].apply(lambda x: x)
+        df['z'] = df['z'].apply(lambda x: x + 1) # add 1 unit for visualization
         df['size'] = 10
         # Append to list to stack later
         actors_dfs.append(df)
     
     # Concatenate all dictionaries
-    actors_df = pd.concat(actors_dfs)
+    actors_df = pd.concat(actors_dfs, sort=False)
 
     # Create an animated 3D scatter plot
     fig = px.scatter_3d(actors_df, x='x', y='y', z='z',
@@ -45,7 +45,6 @@ def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict],
             )
         )
     )
-
     # Finally, display the whole figure
     fig.update_layout(title=title, autosize=False,
                         width=width, height=height,
