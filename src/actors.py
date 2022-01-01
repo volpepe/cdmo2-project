@@ -6,8 +6,8 @@ ACTORS = {
         'optimizer_type': 'nelden_mead_optimizer'
     },
     'bob': {
-        'optimizer': RandomOptimizer,
-        'optimizer_type': 'random_optimizer'
+        'optimizer': BacktrackingLineSearchOptimizer,
+        'optimizer_type': 'backtracking_line_search_optimizer'
     },
     'carl': {
         'optimizer': RandomOptimizer,

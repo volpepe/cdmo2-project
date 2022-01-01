@@ -2,6 +2,8 @@ import pandas as pd
 from typing import Dict, Any
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.io as pio
+pio.renderers.default = 'browser'
 
 def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict], 
                     title:str='Mountain Climbers',
@@ -20,6 +22,7 @@ def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict],
         df['actor'] = actor
         df['z'] = df['z'].apply(lambda x: x + 1) # add 1 unit for visualization
         df['size'] = 10
+        df['optimizer'] = actors[actor]['optimizer_type']
         # Append to list to stack later
         actors_dfs.append(df)
     
@@ -45,7 +48,9 @@ def show_animation( z_data: pd.DataFrame, actors: Dict[str, Dict],
             )
         )
     )
+    
     # Finally, display the whole figure
-    fig.update_layout(title=title, autosize=False,
-                        width=width, height=height,
-                        margin=margin).show()
+    fig = fig.update_layout(title=title, autosize=False,
+                            width=width, height=height,
+                            margin=margin)
+    fig.write_html('tmp.html', auto_open=True)

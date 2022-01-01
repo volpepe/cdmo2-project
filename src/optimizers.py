@@ -118,18 +118,18 @@ class NelderMeadOptimizer(Optimizer):
 
     Note: this optimizer assumes that the space of choice for positions
     is bidimentional (coordinates [x,y])
-
-    - c is a parameter for the length of the sides of the simplex
+    ---
+    - c is a parameter for the length of the sides of the simplex (default: 10).
     - alpha controls the placement of the new point in the "reflection"
-        operation
+        operation (default: 1).
     - beta controls the placement of the new point in the "contraction"
-        operation
+        operation (default: 0.5).
     - gamma controls the placement of the new point in the "expansion"
-        operation
+        operation (default: 1).
     - rho is the shrinking factor and controls the placement of all
-        points when the shrink operation is chosen
+        points when the shrink operation is chosen (default: 0.5).
     - epsilon is a threshold on the size of the area of the simplex
-        when we check for convergence.
+        when we check for convergence (default: 0.01).
     '''
     def __init__(self, z_map: pd.DataFrame, c:float=10,
                 alpha:float=1, gamma:float=1, beta:float=0.5, 
@@ -303,55 +303,60 @@ class NelderMeadOptimizer(Optimizer):
         return self.get_position()
 
 
-class LineSearchOptimizer(Optimizer):
+class BacktrackingLineSearchOptimizer(Optimizer):
     ''' 
-    Creates a simple Line Seach Optimizer which moves in the
-    direction of a heuristically found direction with a step size 
-    computed according to the Armijo condition.
+    Creates a simple Backtracking Line Seach Optimizer which moves in a
+    heuristically-computed direction with a dynamic step size.
 
-    The heuristic for choosing the direction is:
-    - Compute the height at all 8 adjacent points with respect to the
-        one where the agent is currently at
-    - Choose the direction of maximum (positive) change
+    The direction is computed as the gradient of the function,
+    estimated through numerical differentiation and the method of
+    finite differences.
+    - Rather than evaluating the derivatives at point x, we calculate
+        the slope of a line that passes from x-h and x+h given h small number.
+        Thus, the derivative is approximated to (f(x+h)-f(x-h)) / 2h (symmetric
+        difference quotient)
+    - The step size is found by starting with a very large step and iteratively 
+        decreasing it until the update respects the Armijo condition (until the 
+        increase in the objective function corresponds to an expected increase)
+    ---
+    - h: A parameter that indicates how much should we look around for calculating
+        the derivative (default: 3).
+    - c1: Scalar that has an impact on the difference that must be present between xk and xk+1
+        for a step size to be considered appropriate (default: 0.5).
+    - p: Scalar to be used as a scaler to reduce the step size at the following iteration of
+        the backtracking algorithm (default: 0.8).
+    - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
+        (default: 10).
     '''
+    def __init__(self, z_map: pd.DataFrame, h:float=2, c1:float=0.5, 
+                 p:float=0.8, a_t:float=10) -> None:
+        super().__init__(z_map)
+        self.h = h
+        self.c1 = c1
+        self.p = p
+        self.a_t = a_t
+
+    def gradient_approx(self) -> np.array:
+        '''
+        Computes a gradient approximation ([dx, dy]) using finite differences.
+        '''
+        # Derivative in x axis: (f(x+h, y)-f(x-h, y)) / 2h
+        dx = self.get_z_level(self.x+self.h, self.y) - self.get_z_level(self.x-self.h, self.y) / 2*self.h
+        # Derivative in y axis: (f(x, y+h)-f(x, y-h) / 2h
+        dy = self.get_z_level(self.x, self.y+self.h) - self.get_z_level(self.x, self.y-self.h) / 2*self.h
+        # Gradient approximation: [dx,dy]
+        return np.array([dx, dy])
+
     def next_step(self) -> Tuple:
-        # To know the direction of movement we should know the gradient
-        # or use a reasonable heuristic. In this case we don't know the
-        # underlying function, so we have to use a heuristic.
-
-        # 1. Compute the difference in height between the 
-        #    current point and adjacent points
-        #    Note: a positive difference means that there is a ascent, 
-        #    a negative difference means that there is a descent
-        current_z = self.get_z_level(self.x, self.y)
-        #    Check boundaries
-        xp = self.x+1 if self.x+1 < self.z_map_shape[0] else self.x
-        xm = self.x-1 if self.x-1 >= 0 else self.x
-        yp = self.y+1 if self.y+1 < self.z_map_shape[1] else self.y
-        ym = self.y-1 if self.y-1 >= 0 else self.y
-        adjacent_z = np.array([
-            [ self.get_z_level(xm, ym), self.get_z_level(self.x, ym), self.get_z_level(xp, ym) ],
-            [ self.get_z_level(xm, self.y), self.get_z_level(self.x, self.y), self.get_z_level(xp, self.y) ],
-            [ self.get_z_level(xm, yp), self.get_z_level(self.x, yp), self.get_z_level(xp, yp) ]
-        ])
-        adjacent_diffs = adjacent_z - current_z
-
-        # 2. Use the direction of max positive difference to move
-        max_dir_idx = np.argmax(adjacent_diffs)
-        #   // or % 3 because there are 3 neighbours per side,
-        #   -1 because we have to change range [0,2] into range [-1,1]
-        dir_x, dir_y = (max_dir_idx % 3) - 1, (max_dir_idx // 3) - 1
-
-        # 3. Get an appropriate step length using Armijo conditions.
-        # Note: We use as gradient approximation the depth difference in the two axis 
-        # towards the movement direction
-        gradient_approx = np.array([self.get_z_level(self.x + dir_x, self.y) - current_z,
-                                    self.get_z_level(self.x, self.y + dir_y) - current_z])
-        a = self.armijo_step_length(gradient_approx)
+        # Compute the gradient approximation
+        grad = self.gradient_approx()
+        # The "gradient" is the proposed direction of movement. Using Armijo condition we explore 
+        # what could be a good step size choice.
+        a = self.backtracking_algorithm(grad)
 
         # Once we have a direction, we need to scale it properly (being sure to stay within boundaries)
-        n_x = self.x + a*gradient_approx[0] if 0 <= self.x + a*gradient_approx[0] < self.z_map_shape[0] else self.x
-        n_y = self.y + a*gradient_approx[1] if 0 <= self.y + a*gradient_approx[1] < self.z_map_shape[1] else self.y
+        n_x = self.x + a*grad[0] #if 0 <= self.x + a*grad[0] < self.z_map_shape[0] else self.x
+        n_y = self.y + a*grad[1] #if 0 <= self.y + a*grad[1] < self.z_map_shape[1] else self.y
         n_z = self.get_z_level(n_x, n_y)
         
         # Update position on optimizer
@@ -360,39 +365,45 @@ class LineSearchOptimizer(Optimizer):
         return (n_x, n_y, n_z)
 
 
-    def armijo_step_length(self, pk, c1=0.5, p=0.8, a_t=5):
+    def backtracking_algorithm(self, pk):
         '''
-        Algorithm to find a good step length using Armijo's condition. This condition
+        Algorithm to find a good step length iteratively, starting from a high step size and
+        iteratively decreasing it until the update respects Armijo's condition. This condition
         ensures that the increase/decrease in the objective function should be proportional
-        to both the step length and the gradient (or our approximation of it).
+        to both the step length and the our gradient approximation.
 
-        Mathematically (for minimization), it's:
+        Mathematically (for minimization), Armijo condition is:
 
         f(xk+a*pk) < f(xk) + c1*a*np.dot(grad(xk).T@, pk)
 
-        where xk is the current position, f is the map and the gradient
-        is the height difference towards the direction of maximal change in the 
-        two axis (approximation of the gradient)
+        where xk is the current position, pk the proposed direction,
+        grad(xk) the (approximation) of the gradient (in our case, pk
+        and the gradient are the same thing).
 
+        Note: the algorithm could techincally take a very long time to converge and
+        this time could be better used to compute another direction, so we let it 
+        run for at most 15 iterations (min step_size = about 0.35).
+        ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
-        -    grad: gradient function of f (or an approximation)
-        -    a_t: starting a (>0)
-        -    p: scalar of direction for finding new a, [0,1]
-        -    c1: scalar that has an impact on the difference that must be present between xk and xk+1
-        
+        ---
         Returns:
         -    a: suggested step size for this iteration
         '''
+        # Get the current position into an array
         xk = np.array([self.x, self.y])
-        a = a_t
+        # Initialize the starting step size
+        a = self.a_t
         j = 0
-        while j < 10:
+        while j < 15:
+            # Compute the new position 
             new_pos = xk+a*pk
-            if  self.get_z_level(new_pos[0], new_pos[1]) > \
-                self.get_z_level(xk[0], xk[1]) + c1*a*np.dot(pk.T,pk): # Armijo condition
+            # Armijo condition: if respected we have found a good step size
+            if  self.get_z_level(new_pos[0], new_pos[1]) >= \
+                self.get_z_level(xk[0], xk[1]) + self.c1*a*np.dot(pk.T,pk): 
                 break
             else:
-                a = p*a
+                # Otherwise, reduce the step size and retry
+                a = self.p*a
                 j += 1
         return a
