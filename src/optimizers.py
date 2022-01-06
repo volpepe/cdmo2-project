@@ -3,6 +3,7 @@ import random
 import pandas as pd
 import numpy as np
 import math
+from constants import TUNING_SIZE, DESIRED_SIZE
 
 class Optimizer():
     '''
@@ -15,6 +16,7 @@ class Optimizer():
         start_x, start_y, _ = self.get_starting_point()
         self.x = start_x
         self.y = start_y
+        self.scale = DESIRED_SIZE / TUNING_SIZE # Used for map size scaling
 
     def in_boundaries(self, x:float, y:float) -> bool:
         """
@@ -88,15 +90,15 @@ class RandomOptimizer(Optimizer):
     def next_step(self) -> Tuple:
         """
         The following position of the agent is found by moving the agent
-        by a random quantity in the range [-1,1] in both axis.
+        by a random quantity in the range `[-5*scale, +5*scale]` in both axis.
         """
         # Apply update and index on z_map.
         n_x, n_y = 0, 0
         while True:
             # Compute random movements until we get one that moves the agent within
             # the map boundaries (hopefully the first one)
-            move_x, move_y = random.randint(-1,1)*random.random()*5, \
-                            random.randint(-1,1)*random.random()*5
+            move_x, move_y = random.randint(-1,1)*random.random()*self.scale, \
+                            random.randint(-1,1)*random.random()*self.scale
             n_x, n_y =  (self.x+move_x), (self.y+move_y) 
             if self.in_boundaries(n_x, n_y):
                 break
@@ -119,7 +121,7 @@ class NelderMeadOptimizer(Optimizer):
     Note: this optimizer assumes that the space of choice for positions
     is bidimentional (coordinates [x,y])
     ---
-    - c is a parameter for the length of the sides of the simplex (default: 10).
+    - c is a parameter for the length of the sides of the simplex (default: 10*scale).
     - alpha controls the placement of the new point in the "reflection"
         operation (default: 1).
     - beta controls the placement of the new point in the "contraction"
@@ -129,7 +131,7 @@ class NelderMeadOptimizer(Optimizer):
     - rho is the shrinking factor and controls the placement of all
         points when the shrink operation is chosen (default: 0.5).
     - epsilon is a threshold on the size of the area of the simplex
-        when we check for convergence (default: 0.01).
+        when we check for convergence (default: 0.01*scale).
     '''
     def __init__(self, z_map: pd.DataFrame, c:float=10,
                 alpha:float=1, gamma:float=1, beta:float=0.5, 
@@ -139,8 +141,8 @@ class NelderMeadOptimizer(Optimizer):
         self.beta = beta
         self.gamma = gamma
         self.rho = rho
-        self.epsilon = epsilon
-        self.init_simplex(c)
+        self.epsilon = epsilon*self.scale
+        self.init_simplex(c*self.scale)
         self.rank_points()
 
     def init_simplex(self, c:float) -> None:
@@ -320,21 +322,21 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         increase in the objective function corresponds to an expected increase)
     ---
     - h: A parameter that indicates how much should we look around for calculating
-        the derivative (default: 3).
+        the derivative (default: 3*scale).
     - c1: Scalar that has an impact on the difference that must be present between xk and xk+1
         for a step size to be considered appropriate (default: 0.5).
     - p: Scalar to be used as a scaler to reduce the step size at the following iteration of
         the backtracking algorithm (default: 0.8).
     - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
-        (default: 10).
+        (default: 10*scale).
     '''
     def __init__(self, z_map: pd.DataFrame, h:float=2, c1:float=0.5, 
                  p:float=0.8, a_t:float=10) -> None:
         super().__init__(z_map)
-        self.h = h
+        self.h = h*self.scale
         self.c1 = c1
         self.p = p
-        self.a_t = a_t
+        self.a_t = a_t*self.scale
 
     def gradient_approx(self) -> np.array:
         '''
@@ -382,7 +384,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Note: the algorithm could techincally take a very long time to converge and
         this time could be better used to compute another direction, so we let it 
-        run for at most 15 iterations (min step_size = about 0.35).
+        run for at most 15 iterations (min step_size = about 0.35*scale).
         ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
