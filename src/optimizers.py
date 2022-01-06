@@ -343,9 +343,9 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         Computes a gradient approximation ([dx, dy]) using finite differences.
         '''
         # Derivative in x axis: (f(x+h, y)-f(x-h, y)) / 2h
-        dx = self.get_z_level(self.x+self.h, self.y) - self.get_z_level(self.x-self.h, self.y) / 2*self.h
+        dx = (self.get_z_level(self.x+self.h, self.y) - self.get_z_level(self.x-self.h, self.y)) / 2*self.h
         # Derivative in y axis: (f(x, y+h)-f(x, y-h) / 2h
-        dy = self.get_z_level(self.x, self.y+self.h) - self.get_z_level(self.x, self.y-self.h) / 2*self.h
+        dy = (self.get_z_level(self.x, self.y+self.h) - self.get_z_level(self.x, self.y-self.h)) / 2*self.h
         # Gradient approximation: [dx,dy]
         return np.array([dx, dy])
 
@@ -384,7 +384,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Note: the algorithm could techincally take a very long time to converge and
         this time could be better used to compute another direction, so we let it 
-        run for at most 15 iterations (min step_size = about 0.35*scale).
+        run for at most 15 iterations (min step_size = about 0.7*scale).
         ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
@@ -409,3 +409,6 @@ class BacktrackingLineSearchOptimizer(Optimizer):
                 a = self.p*a
                 j += 1
         return a
+
+class ParticleSwarmOptimizationOptimizer(Optimizer):
+    pass
