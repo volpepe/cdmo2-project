@@ -3,7 +3,6 @@ import random
 import pandas as pd
 import numpy as np
 import math
-from constants import TUNING_SIZE, DESIRED_SIZE
 
 class Optimizer():
     '''
@@ -16,13 +15,12 @@ class Optimizer():
         start_x, start_y, _ = self.get_starting_point()
         self.x = start_x
         self.y = start_y
-        self.scale = DESIRED_SIZE / TUNING_SIZE # Used for map size scaling
 
     def in_boundaries(self, x:float, y:float) -> bool:
         """
         Checks if a x,y position is within the boundaries of the map
         """
-        return 0 <= x <= self.z_map_shape[0] - 1 and 0 <= y <= self.z_map_shape[1] - 1
+        return 0 <= x <= self.z_map_shape[1] - 1 and 0 <= y <= self.z_map_shape[0] - 1
 
     def get_z_level(self, x:float, y:float) -> float:
         '''
@@ -65,7 +63,7 @@ class Optimizer():
         optima and we try to deal with this need through randomness)
         ''' 
         row, col = random.choice(np.argwhere(
-            self.z_arr < self.z_arr.min() + ((self.z_arr.max() - self.z_arr.min()) / 10))
+            self.z_arr < (np.amin(self.z_arr) + ((np.amax(self.z_arr)- np.amin(self.z_arr)) / 10)))
         )
         # Old code, used to calculate the minimum point
         #col = np.argmin(self.z_arr) % self.z_map_shape[1]
@@ -90,15 +88,15 @@ class RandomOptimizer(Optimizer):
     def next_step(self) -> Tuple:
         """
         The following position of the agent is found by moving the agent
-        by a random quantity in the range `[-5*scale, +5*scale]` in both axis.
+        by a random quantity in the range `[-10, +10]` in both axis.
         """
         # Apply update and index on z_map.
         n_x, n_y = 0, 0
         while True:
             # Compute random movements until we get one that moves the agent within
             # the map boundaries (hopefully the first one)
-            move_x, move_y = random.randint(-1,1)*random.random()*self.scale, \
-                            random.randint(-1,1)*random.random()*self.scale
+            move_x, move_y = random.randint(-1,1)*random.random()*10, \
+                            random.randint(-1,1)*random.random()*10
             n_x, n_y =  (self.x+move_x), (self.y+move_y) 
             if self.in_boundaries(n_x, n_y):
                 break
@@ -121,7 +119,7 @@ class NelderMeadOptimizer(Optimizer):
     Note: this optimizer assumes that the space of choice for positions
     is bidimentional (coordinates [x,y])
     ---
-    - c is a parameter for the length of the sides of the simplex (default: 10*scale).
+    - c is a parameter for the length of the sides of the simplex (default: 150).
     - alpha controls the placement of the new point in the "reflection"
         operation (default: 1).
     - beta controls the placement of the new point in the "contraction"
@@ -131,18 +129,18 @@ class NelderMeadOptimizer(Optimizer):
     - rho is the shrinking factor and controls the placement of all
         points when the shrink operation is chosen (default: 0.5).
     - epsilon is a threshold on the size of the area of the simplex
-        when we check for convergence (default: 0.01*scale).
+        when we check for convergence (default: 0.1).
     '''
-    def __init__(self, z_map: pd.DataFrame, c:float=10,
+    def __init__(self, z_map: pd.DataFrame, c:float=150,
                 alpha:float=1, gamma:float=1, beta:float=0.5, 
-                rho:float=0.5, epsilon:float=0.01) -> None:
+                rho:float=0.5, epsilon:float=0.1) -> None:
         super().__init__(z_map)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
         self.rho = rho
-        self.epsilon = epsilon*self.scale
-        self.init_simplex(c*self.scale)
+        self.epsilon = epsilon
+        self.init_simplex(c)
         self.rank_points()
 
     def init_simplex(self, c:float) -> None:
@@ -322,21 +320,21 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         increase in the objective function corresponds to an expected increase)
     ---
     - h: A parameter that indicates how much should we look around for calculating
-        the derivative (default: 3*scale).
+        the derivative (default: 10).
     - c1: Scalar that has an impact on the difference that must be present between xk and xk+1
         for a step size to be considered appropriate (default: 0.5).
     - p: Scalar to be used as a scaler to reduce the step size at the following iteration of
         the backtracking algorithm (default: 0.8).
     - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
-        (default: 10*scale).
+        (default: 100).
     '''
-    def __init__(self, z_map: pd.DataFrame, h:float=2, c1:float=0.5, 
-                 p:float=0.8, a_t:float=10) -> None:
+    def __init__(self, z_map: pd.DataFrame, h:float=10, c1:float=0.5, 
+                 p:float=0.8, a_t:float=100) -> None:
         super().__init__(z_map)
-        self.h = h*self.scale
+        self.h = h
         self.c1 = c1
         self.p = p
-        self.a_t = a_t*self.scale
+        self.a_t = a_t
 
     def gradient_approx(self) -> np.array:
         '''
@@ -384,7 +382,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Note: the algorithm could techincally take a very long time to converge and
         this time could be better used to compute another direction, so we let it 
-        run for at most 15 iterations (min step_size = about 0.7*scale).
+        run for at most 25 iterations (with default parameters, min step_size = about 0.38).
         ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
@@ -397,7 +395,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         # Initialize the starting step size
         a = self.a_t
         j = 0
-        while j < 15:
+        while j < 25:
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
@@ -410,5 +408,177 @@ class BacktrackingLineSearchOptimizer(Optimizer):
                 j += 1
         return a
 
-class ParticleSwarmOptimizationOptimizer(Optimizer):
-    pass
+
+class Particle():
+    '''
+    This class represents one of the particles in the ParticleSwarmOptimizer.
+    Each particle represents a design point and moves in the search space to look
+    for the best solution. The movement of each particle is adjusted according to 
+    the effects of cognitivisim (self experience) and social interaction.
+
+    A particle has:
+    - `p`: A position
+    - `v`: A velocity
+    - `w`: An inertia
+    - `c1`: A cognitive parameter (confidence in itself)
+    - `c2`: A social parameter (confidence in the rest of the swarm)
+    
+    It also keeps track of the best position so far `p_best` and computes two random
+    numbers `r1` and `r2` at each iteration.
+
+    The velocity of a particle at any given iteration is updated following:
+    
+    `v = w*v + c1*r1*(p_best-p) + c2*r2*(p_best_s-p)`
+
+    where `p_best_s` is the swarm's best particle position (computed by the master 
+    and given as input). 
+
+    The position is then updated as:
+
+    `p = p + v`.
+    '''
+    def __init__(self, p0: np.array, v0: float, w: float,
+                 c1: float, c2: float) -> None:
+        self.p = p0
+        self.v = v0
+        self.w = w
+        self.c1 = c1
+        self.c2 = c2
+        self.p_best = self.p
+
+    def get_pos(self) -> np.array:
+        '''
+        The master can inquire about the cell's position (eg. to calculate its height)
+        '''
+        return self.p
+    
+    def set_p_best(self, p_best: np.array) -> None:
+        '''
+        The master should call this function to set a new position of the particle
+        as "best" achieved position.
+        '''
+        self.p_best = p_best
+
+    def reduce_inertia(self, new_inertia: float) -> None:
+        '''
+        The master may want to reduce the inertia of the particle (eg. implementing
+        a dynamic inertia scheduler)
+        '''
+        self.w = new_inertia
+    
+    def compute_update(self, p_best_s: np.array) -> None:
+        '''
+        Updates the particle's position and velocity following the rules:
+
+        - `v = w*v + c1*r1*(p_best-p) + c2*r2*(p_best_s-p)`
+        - `p = p + v`.
+
+        `p_best_s` should be computed by the master aggregating all particles' positions
+        '''
+        # Compute the random parameters for this iteration
+        r1, r2 = random.uniform(0,1), random.uniform(0,1)
+        # Follow the rule for updating the velocity
+        self.v = self.v*self.w + self.c1*r1*(self.p_best-self.p) + \
+                                 self.c2*r2*(p_best_s-self.p)
+        # Update the particle's position
+        self.p = self.p + self.v
+
+
+class ParticleSwarmOptimizer(Optimizer):
+    '''
+    This object acts as a master for a set of Particle objects, which move in the search
+    space to find a good solution and are updated based on their own beliefs, as well as
+    social interaction.
+
+    The Particles only know the world from the eyes of the Optimizer, which acts as their
+    master. The Optimizer has the ability to:
+    - Instantiate all particles
+    - Obtain the position of each particle
+    - Computing their height for them
+    - Updating each of their "best" found position based on this information
+    - Managing inter-particles communication by the exchange of messages (eg. finding the
+        best global position)
+    - Asking each particle to perform a position and velocity update (which is managed
+        individually)
+
+    It's important to note that in this optimizer, x and y are lists of positions.
+
+    Inputs:
+    - n_particles: The number of particles that this optimizer should manage.
+        (default: 20)
+    - w0: The initial inertia for the particles (default: 0.5)
+    - v0_scale: The scale for the initial velocity of the particles, which will be a random
+        vector of elements in [-v0_scale, v0_scale]
+    '''
+    def __init__(self, z_map: pd.DataFrame, n_particles: int=20, 
+                 w0: float=0.5, v0_scale: float=5) -> None:
+        super().__init__(z_map)
+        self.N = n_particles
+        self.particles:List[Particle] = []
+        self.w0 = w0
+        self.v0_scale = v0_scale
+        self.epochs_counter = 0
+        self.init_particles()
+        self.x = [ p.get_pos()[0] for p in self.particles ]
+        self.y = [ p.get_pos()[1] for p in self.particles ]
+
+    def inertia_scheduler(self) -> float:
+        '''
+        A simple scheduler for inertia:
+        - Reduce to half after 70 iterations
+        - Reduce to half again after 90 iterations
+        '''
+        if self.epochs_counter >= 90:
+            return self.w0 / 4
+        elif self.epochs_counter >= 70:
+            return self.w0 / 2
+        else:
+            return self.w0
+
+    def init_particles(self):
+        '''
+        Creates N new particles and appends them to the list of particles
+        '''
+        for _ in range(self.N):
+            # Obtain a random position for the particle
+            p0 = np.array(self.get_starting_point()[:-1])
+            # Compute a random initial velocity
+            v0 = np.random.uniform(low=-self.v0_scale, high=self.v0_scale,
+                                    size=(2,))
+            # We reduce the inertia after some epochs
+            w = self.w0
+            # c1 and c2 are random parameters for each particles.
+            # They should sum up to 1.
+            c1 = random.random()
+            c2 = 1 - c1
+            particle = Particle(p0, v0, w, c1, c2)
+            self.particles.append(particle)
+
+    def next_step(self) -> Tuple:
+        '''
+        Computes the next step of all particles
+        '''
+        # Step 1: Gather all particles positions
+        positions = [ p.get_pos() for p in self.particles ]
+        # Step 2: Compute height of each particle
+        heights = [ self.get_z_level(p[0], p[1]) for p in positions ]
+        # Step 3: Get best particle position as argmax of heights
+        best_pos = positions[np.argmax(heights)]
+        # Step 4: Update the inertia of all particles if necessary
+        for i, particle in enumerate(self.particles):
+            particle.reduce_inertia(self.inertia_scheduler())
+            # Step 5: Ask every particle to compute a step
+            particle.compute_update(best_pos)
+            # Step 6: Obtain the new positions of the particle
+            new_position = particle.get_pos()
+            # Step 7: Get height of new position
+            new_height = self.get_z_level(new_position[0], new_position[1])
+            # Step 8: Compare heights: if new one is better, update particle's 
+            #   best position
+            if new_height > heights[i]:
+                particle.set_p_best(new_position)
+        # Step 9: Update optimizer
+        self.x = [ p.get_pos()[0] for p in self.particles ]
+        self.y = [ p.get_pos()[1] for p in self.particles ]
+        return (self.x, self.y, [ self.get_z_level(p.p[0], p.p[1]) for p in self.particles ])
+
