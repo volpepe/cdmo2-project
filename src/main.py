@@ -42,7 +42,7 @@ def open_file(filename:str):
     # Resize the data by interpolation to obtain a grid that can
     # be displayed more easily (also height-rescaled)
     visual_grid = pd.DataFrame(np.array(z_im.resize(
-        (VISUAL_H, VISUAL_W), resample=Image.BILINEAR)
+        (VISUAL_W, VISUAL_H), resample=Image.BILINEAR)
     ) / np.max(z_array) * MAX_HEIGHT)
 
     return z_data, visual_grid
