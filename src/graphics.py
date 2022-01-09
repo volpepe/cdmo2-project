@@ -54,8 +54,8 @@ def show_animation( visual_data: pd.DataFrame,
             df = pd.DataFrame.from_dict(actors[actor]['history'])
             df['size'] = 10
         # Scale x/y coordinates for visuals
-        df['x'] = df['x'] / (DATA_W/VISUAL_W)
-        df['y'] = df['y'] / (DATA_H/VISUAL_H)
+        df['x'] = df['x'] * VISUAL_W / DATA_W
+        df['y'] = df['y'] * VISUAL_H / DATA_H
         df['z'] = df['z'].apply(lambda x: x + 1) # add 1 unit for visualization
         # Add actor name to the dataframe
         df['actor'] = actor

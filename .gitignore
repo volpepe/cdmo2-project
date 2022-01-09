@@ -131,5 +131,8 @@ dmypy.json
 # VS Code
 .vscode
 
+# Other materials
+other
+
 # Plotly temporary web page
 tmp.html
