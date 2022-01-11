@@ -13,7 +13,7 @@ def show_animation( visual_data: pd.DataFrame,
                     actors: Dict[str, Dict], 
                     title:str='Mountain Climbers',
                     width: int = 1200, height: int = 720, 
-                    margin: Dict[Any,int] = dict(l=100, r=100, b=100, t=100)) -> None:
+                    margin: Dict[Any,int] = dict(l=100, r=100, b=100, t=100, autoexpand=False)) -> None:
     '''
     Creates the map and animation visualization and shows them.
     '''
@@ -118,7 +118,26 @@ def show_animation( visual_data: pd.DataFrame,
     #     fig.frames[i].data = wrkan
     
     # Finally, display the whole figure
-    fig = fig.update_layout(title=title, autosize=True,
+    fig = fig.update_layout(title=title, autosize=False,
                             width=width, height=height,
-                            margin=margin)
+                            margin=margin, 
+                            scene={'aspectmode': 'cube',
+                            'xaxis': {'range': [0, VISUAL_W],
+                                    'rangemode': 'nonnegative',
+                                    'autorange': False},
+                            'yaxis': {'range': [0, VISUAL_H],
+                                    'rangemode': 'nonnegative',
+                                    'autorange': False}},
+                            yaxis={'range': [0, VISUAL_H],
+                                    'rangemode': 'nonnegative',
+                                    'autorange': False},
+                            xaxis={'range': [0,VISUAL_W],
+                                    'rangemode': 'nonnegative',
+                                    'autorange': False},
+                            scene_camera = dict(
+                                up=dict(x=0, y=0, z=1),
+                                center=dict(x=0, y=0, z=0),
+                                eye=dict(x=1.25, y=-1.25, z=1.2)
+                            )
+    )
     fig.write_html('tmp.html', auto_open=True)
