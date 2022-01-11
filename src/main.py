@@ -12,9 +12,7 @@ sys.path.append(os.path.abspath('.'))
 from src.optimizers import Optimizer
 from src.graphics import show_animation
 from src.actors import ACTORS
-from src.constants import MAX_HEIGHT, \
-    MOUNTAINS, NUM_EPOCHS, VISUAL_H, VISUAL_W, \
-    DATA_H, DATA_W
+from src.constants import *
 
 def get_extension(filename:str):
     '''
@@ -54,11 +52,11 @@ def generate_steps(actors: Dict[str,Dict], epochs: int) -> None:
     for actor in actors:
         optimizer: Optimizer = actors[actor]['optimizer']
         if actors[actor]['optimizer_type'] == 'particle_swarm_optimizer':
-            # Obtain starting position for each particle
+            # Obtain starting position for each particle (in this particular optimizer, they are lists)
             start_x,start_y,start_z = optimizer.x, optimizer.y, \
                 [ optimizer.get_z_level(p.p[0], p.p[1]) for p in optimizer.particles ]
         else: 
-            # Obtain starting position for each actor
+            # Obtain starting position for actor
             start_x,start_y,start_z = optimizer.x, optimizer.y, \
                 optimizer.get_z_level(optimizer.x,optimizer.y)
         # Add starting position to actor dictionaries
@@ -86,7 +84,7 @@ if __name__ == '__main__':
     z_data, visual_data = open_file(mountain)
     # Initialize optimizers z_data
     for actor in ACTORS:
-        ACTORS[actor]['optimizer'] = ACTORS[actor]['optimizer'](z_data)
+        ACTORS[actor]['optimizer'] = ACTORS[actor]['optimizer'](z_data, STARTING_POS_AREA)
     # Compute steps for actors
     generate_steps(ACTORS, NUM_EPOCHS)
     # Produce and show final animation

@@ -4,14 +4,33 @@ import pandas as pd
 import numpy as np
 import math
 
+from constants import *
+
+# This file contains all the optimizers and their implementations.
+# Some general things to remember:
+# - A 2D numpy array has shape [ n_rows, n_columns ] = [ height, width]. 
+#   Therefore, when indexing, if we want the x coordinate to represent 
+#   the traditional horizontal axis and the y coordinate to represent 
+#   the vertical axis, we need to flip them when indexing. 
+#   For example: the height at position (x,y) is obtained from z_arr[y, x]
+# - Another unintuitive thing with coordinates is that (0,0) is in the top left
+#   corner. Therefore, growing y means "going down" in the array.
+# - To avoid putting hard constraints on the positions all the time, we make
+#   the algorithms able to index positions outside the array's boundaries.
+#   Out of bounds, the height is always -1.
+# - Most of these algorithms are very sensitive to the starting positions,
+#   therefore we don't fix the same starting position for all of them, but
+#   obtain a random initial starting position in the lowest area of the map.
+
 class Optimizer():
     '''
     Base class for all optimizers.
     '''
-    def __init__(self, z_map:pd.DataFrame) -> None:
+    def __init__(self, z_map:pd.DataFrame, starting_pos_area:float=10) -> None:
         self.z_map = z_map
         self.z_arr = np.array(self.z_map)
         self.z_map_shape = self.z_map.shape
+        self.starting_pos_area = starting_pos_area
         start_x, start_y, _ = self.get_starting_point()
         self.x = start_x
         self.y = start_y
@@ -37,22 +56,39 @@ class Optimizer():
             return self.z_map.iloc[int(y),int(x)]
         # Compute coordinates and height of surrounding exact positions
         lx = math.floor(x)
-        ux = math.ceil(x) if math.ceil(x) != lx else lx+1 # For ints
+        ux = math.ceil(x)
         ly = math.floor(y)
-        uy = math.ceil(y) if math.ceil(y) != ly else ly+1 # For ints
-        # Check if upper bounds are within boundaries
+        uy = math.ceil(y)
+        # Compute fix for integer coordinates (where ceil and floor are the same)
+        if ux == lx:
+            ux = lx+1
+        if uy == ly:
+            uy = ly+1
+        # Check if upper bounds are within boundaries (lower bounds always are
+        #   or we would have returned -1 before)
         if not self.in_boundaries(ux, uy):
-            # Height is -1 outside of boundaries: negative height will
-            # never be chosen by direction algorithms
+            # ux and uy are out of boundaries. Since lx,ly is always in-bounds,
+            # we entrust that position.
             z1, z2, z3, z4 = self.z_map.iloc[ly, lx], -1,-1,-1
         else:
             z1, z2, z3, z4 = self.z_map.iloc[ly, lx], self.z_map.iloc[ly, ux],\
                              self.z_map.iloc[uy, lx], self.z_map.iloc[uy, ux]
         # Interpolate between upper and lower points (weighted sum of influences)
-        r1 = z1*(ux-x)/(ux-lx) + z2*(x-lx)/(ux-lx)
-        r2 = z3*(ux-x)/(ux-lx) + z4*(x-lx)/(ux-lx)
+        # z1 -----r1------ z2
+        # (lx,ly)  |  (ux,ly) 
+        # |        |        |
+        # |      (x,y)      |
+        # |        |        |
+        # (lx,uy)  |  (ux,uy)
+        # z3 -----r2------ z4
+        lweight = (ux-x)/(ux-lx)
+        rweight = (x-lx)/(ux-lx)
+        uweight = (uy-y)/(uy-ly)
+        dweight = (y-ly)/(uy-ly)
+        r1 = z1*lweight+ z2*rweight
+        r2 = z3*lweight + z4*rweight
         # Apply y-axis interpolation to get the final height
-        z_final = r1*(uy-y)/(uy-ly)+r2*(y-ly)/(uy-ly)
+        z_final = r1*uweight+r2*dweight
         return z_final
 
     def get_starting_point(self) -> Tuple:
@@ -63,11 +99,13 @@ class Optimizer():
         optima and we try to deal with this need through randomness)
         ''' 
         row, col = random.choice(np.argwhere(
-            self.z_arr < (np.amin(self.z_arr) + ((np.amax(self.z_arr)- np.amin(self.z_arr)) / 10)))
-        )
+            self.z_arr < (np.amin(self.z_arr) + 
+            ((np.amax(self.z_arr) - np.amin(self.z_arr)) / 100 * self.starting_pos_area))
+        ))
         # Old code, used to calculate the minimum point
         #col = np.argmin(self.z_arr) % self.z_map_shape[1]
         #row = math.floor(np.argmin(self.z_arr) / self.z_map_shape[1])
+        # Return inverted because we want coordinates
         return (col, row, self.z_arr[row,col])
 
     def next_step(self) -> Tuple:
@@ -88,15 +126,15 @@ class RandomOptimizer(Optimizer):
     def next_step(self) -> Tuple:
         """
         The following position of the agent is found by moving the agent
-        by a random quantity in the range `[-10, +10]` in both axis.
+        by a random quantity in the range `[-RANDOM_MOVEMENT_RANGE, +RANDOM_MOVEMENT_RANGE]` in both axis.
         """
         # Apply update and index on z_map.
         n_x, n_y = 0, 0
         while True:
             # Compute random movements until we get one that moves the agent within
             # the map boundaries (hopefully the first one)
-            move_x, move_y = random.randint(-1,1)*random.random()*10, \
-                            random.randint(-1,1)*random.random()*10
+            move_x, move_y = random.randint(-1,1)*random.random()*RANDOM_MOVEMENT_RANGE, \
+                            random.randint(-1,1)*random.random()*RANDOM_MOVEMENT_RANGE
             n_x, n_y =  (self.x+move_x), (self.y+move_y) 
             if self.in_boundaries(n_x, n_y):
                 break
@@ -119,7 +157,8 @@ class NelderMeadOptimizer(Optimizer):
     Note: this optimizer assumes that the space of choice for positions
     is bidimentional (coordinates [x,y])
     ---
-    - c is a parameter for the length of the sides of the simplex (default: 150).
+    - c is a parameter for the length of the sides of the simplex 
+        (default: see NELDER_MEAD_C).
     - alpha controls the placement of the new point in the "reflection"
         operation (default: 1).
     - beta controls the placement of the new point in the "contraction"
@@ -127,14 +166,14 @@ class NelderMeadOptimizer(Optimizer):
     - gamma controls the placement of the new point in the "expansion"
         operation (default: 1).
     - rho is the shrinking factor and controls the placement of all
-        points when the shrink operation is chosen (default: 0.5).
+        points when the shrink operation is chosen (default: 0.8).
     - epsilon is a threshold on the size of the area of the simplex
         when we check for convergence (default: 0.1).
     '''
-    def __init__(self, z_map: pd.DataFrame, c:float=150,
-                alpha:float=1, gamma:float=1, beta:float=0.5, 
-                rho:float=0.5, epsilon:float=0.1) -> None:
-        super().__init__(z_map)
+    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float,
+                c:float=NELDER_MEAD_C, alpha:float=1, gamma:float=1, 
+                beta:float=0.5, rho:float=0.8, epsilon:float=0.1) -> None:
+        super().__init__(z_map, starting_pos_area)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -180,7 +219,7 @@ class NelderMeadOptimizer(Optimizer):
         # Worst = lowest point
         self.xw = sorted_points[0]
         # Lousy = second lowest point
-        self.xl = sorted_points[1]
+        self.xl = sorted_points[-2]
         # Also save the function values for those points
         self.fb, self.fw, self.fl = self.get_z_level(self.xb[0],self.xb[1]),\
                                     self.get_z_level(self.xw[0],self.xw[1]),\
@@ -226,7 +265,7 @@ class NelderMeadOptimizer(Optimizer):
 
     def simplex_perturbation(self) -> Tuple:
         # Compute xa, the average of the points in the simplex excluding xw
-        #   Remove the array matching with xw from xw
+        #   Remove the array matching with xw from xs
         points_no_xw = np.asarray(self.xs)[np.all(self.xs != self.xw, axis=1)]
         #   Compute the average of the remaining points
         self.xa = np.average(points_no_xw, axis=0)
@@ -320,17 +359,18 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         increase in the objective function corresponds to an expected increase)
     ---
     - h: A parameter that indicates how much should we look around for calculating
-        the derivative (default: 10).
+        the derivative (default: see LINE_SEARCH_H).
     - c1: Scalar that has an impact on the difference that must be present between xk and xk+1
-        for a step size to be considered appropriate (default: 0.5).
+        for a step size to be considered appropriate (default: 10^-4).
     - p: Scalar to be used as a scaler to reduce the step size at the following iteration of
         the backtracking algorithm (default: 0.8).
     - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
-        (default: 100).
+        (default: see LINE_SEARCH_START_A).
     '''
-    def __init__(self, z_map: pd.DataFrame, h:float=10, c1:float=0.5, 
-                 p:float=0.8, a_t:float=100) -> None:
-        super().__init__(z_map)
+    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float,
+                 h:float=LINE_SEARCH_H, c1:float=10**-4, p:float=0.8, 
+                 a_t:float=LINE_SEARCH_START_A) -> None:
+        super().__init__(z_map, starting_pos_area)
         self.h = h
         self.c1 = c1
         self.p = p
@@ -354,7 +394,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         # what could be a good step size choice.
         a = self.backtracking_algorithm(grad)
 
-        # Once we have a direction, we need to scale it properly (being sure to stay within boundaries)
+        # Once we have a direction, we need to scale it properly
         n_x = self.x + a*grad[0] #if 0 <= self.x + a*grad[0] < self.z_map_shape[0] else self.x
         n_y = self.y + a*grad[1] #if 0 <= self.y + a*grad[1] < self.z_map_shape[1] else self.y
         n_z = self.get_z_level(n_x, n_y)
@@ -374,7 +414,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Mathematically (for minimization), Armijo condition is:
 
-        f(xk+a*pk) < f(xk) + c1*a*np.dot(grad(xk).T@, pk)
+        f(xk+a*pk) < f(xk) + c1*a*np.dot(grad(xk).T, pk)
 
         where xk is the current position, pk the proposed direction,
         grad(xk) the (approximation) of the gradient (in our case, pk
@@ -382,7 +422,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Note: the algorithm could techincally take a very long time to converge and
         this time could be better used to compute another direction, so we let it 
-        run for at most 25 iterations (with default parameters, min step_size = about 0.38).
+        run for at most 27 iterations (with default parameters, min step_size = about 0.48).
         ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
@@ -395,7 +435,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         # Initialize the starting step size
         a = self.a_t
         j = 0
-        while j < 25:
+        while j < 27:
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
@@ -459,9 +499,9 @@ class Particle():
         '''
         self.p_best = p_best
 
-    def reduce_inertia(self, new_inertia: float) -> None:
+    def change_inertia(self, new_inertia: float) -> None:
         '''
-        The master may want to reduce the inertia of the particle (eg. implementing
+        The master may want to change the inertia of the particle (eg. implementing
         a dynamic inertia scheduler)
         '''
         self.w = new_inertia
@@ -494,8 +534,8 @@ class ParticleSwarmOptimizer(Optimizer):
     master. The Optimizer has the ability to:
     - Instantiate all particles
     - Obtain the position of each particle
-    - Computing their height for them
-    - Updating each of their "best" found position based on this information
+    - Compute their height for them
+    - Update each of their "best" found position based on this information
     - Managing inter-particles communication by the exchange of messages (eg. finding the
         best global position)
     - Asking each particle to perform a position and velocity update (which is managed
@@ -506,13 +546,14 @@ class ParticleSwarmOptimizer(Optimizer):
     Inputs:
     - n_particles: The number of particles that this optimizer should manage.
         (default: 20)
-    - w0: The initial inertia for the particles (default: 0.5)
+    - w0: The initial inertia for the particles (default: see PSO_INERTIA)
     - v0_scale: The scale for the initial velocity of the particles, which will be a random
         vector of elements in [-v0_scale, v0_scale]
     '''
-    def __init__(self, z_map: pd.DataFrame, n_particles: int=20, 
-                 w0: float=0.5, v0_scale: float=5) -> None:
-        super().__init__(z_map)
+    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float, 
+                 n_particles: int=20, w0: float=PSO_INERTIA, 
+                 v0_scale: float=PSO_V0_SCALE) -> None:
+        super().__init__(z_map, starting_pos_area)
         self.N = n_particles
         self.particles:List[Particle] = []
         self.w0 = w0
@@ -566,7 +607,7 @@ class ParticleSwarmOptimizer(Optimizer):
         best_pos = positions[np.argmax(heights)]
         # Step 4: Update the inertia of all particles if necessary
         for i, particle in enumerate(self.particles):
-            particle.reduce_inertia(self.inertia_scheduler())
+            particle.change_inertia(self.inertia_scheduler())
             # Step 5: Ask every particle to compute a step
             particle.compute_update(best_pos)
             # Step 6: Obtain the new positions of the particle
@@ -580,5 +621,7 @@ class ParticleSwarmOptimizer(Optimizer):
         # Step 9: Update optimizer
         self.x = [ p.get_pos()[0] for p in self.particles ]
         self.y = [ p.get_pos()[1] for p in self.particles ]
+        # Update epochs counter
+        self.epochs_counter += 1
         return (self.x, self.y, [ self.get_z_level(p.p[0], p.p[1]) for p in self.particles ])
 
