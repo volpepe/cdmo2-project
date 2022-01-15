@@ -357,18 +357,21 @@ class BacktrackingLineSearchOptimizer(Optimizer):
     - The step size is found by starting with a very large step and iteratively 
         decreasing it until the update respects the Armijo condition (until the 
         increase in the objective function corresponds to an expected increase)
+    
+    Note: this optimzier is corrected constantly to stay in-bounds,
+    since going out of bounds is terrible for the gradient.
     ---
     - h: A parameter that indicates how much should we look around for calculating
         the derivative (default: see LINE_SEARCH_H).
     - c1: Scalar that has an impact on the difference that must be present between xk and xk+1
         for a step size to be considered appropriate (default: 10^-4).
     - p: Scalar to be used as a scaler to reduce the step size at the following iteration of
-        the backtracking algorithm (default: 0.8).
+        the backtracking algorithm (default: 0.5).
     - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
         (default: see LINE_SEARCH_START_A).
     '''
     def __init__(self, z_map: pd.DataFrame, starting_pos_area:float,
-                 h:float=LINE_SEARCH_H, c1:float=10**-4, p:float=0.8, 
+                 h:float=LINE_SEARCH_H, c1:float=10**-4, p:float=0.5, 
                  a_t:float=LINE_SEARCH_START_A) -> None:
         super().__init__(z_map, starting_pos_area)
         self.h = h
@@ -379,11 +382,27 @@ class BacktrackingLineSearchOptimizer(Optimizer):
     def gradient_approx(self) -> np.array:
         '''
         Computes a gradient approximation ([dx, dy]) using finite differences.
+        Since the gradient approximation is very sensitive to out-of-bounds values, 
+        we check that the sampled points for the update are in bounds. If they aren't,
+        we set as point to sample the closest in-bound point.
         '''
-        # Derivative in x axis: (f(x+h, y)-f(x-h, y)) / 2h
-        dx = (self.get_z_level(self.x+self.h, self.y) - self.get_z_level(self.x-self.h, self.y)) / 2*self.h
-        # Derivative in y axis: (f(x, y+h)-f(x, y-h) / 2h
-        dy = (self.get_z_level(self.x, self.y+self.h) - self.get_z_level(self.x, self.y-self.h)) / 2*self.h
+        # Sample points and check if they are in bounds
+        plx = (self.x-self.h, self.y)
+        prx = (self.x+self.h, self.y)
+        puy = (self.x, self.y-self.h)
+        pdy = (self.x, self.y+self.h)
+        # If they're not in bounds, correct them accordingly
+        if not self.in_boundaries(*plx): plx = (0, self.y)
+        if not self.in_boundaries(*prx): prx = (self.z_map_shape[1]-1, self.y)
+        if not self.in_boundaries(*puy): puy = (self.x, 0)
+        if not self.in_boundaries(*pdy): pdy = (self.x, self.z_map_shape[0]-1)
+        # Calculate the actual h (it's usually 2*self.)
+        hx = prx[0]-plx[0]
+        hy = pdy[1]-puy[1]
+        # Derivative in x axis: (f(x+h, y)-f(x-h, y)) / hx
+        dx = (self.get_z_level(*prx) - self.get_z_level(*plx)) / hx
+        # Derivative in y axis: (f(x, y+h)-f(x, y-h) / hy
+        dy = (self.get_z_level(*pdy) - self.get_z_level(*puy)) / hy
         # Gradient approximation: [dx,dy]
         return np.array([dx, dy])
 
@@ -395,8 +414,14 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         a = self.backtracking_algorithm(grad)
 
         # Once we have a direction, we need to scale it properly
-        n_x = self.x + a*grad[0] #if 0 <= self.x + a*grad[0] < self.z_map_shape[0] else self.x
-        n_y = self.y + a*grad[1] #if 0 <= self.y + a*grad[1] < self.z_map_shape[1] else self.y
+        n_x = self.x + a*grad[0]
+        n_y = self.y + a*grad[1]
+        # Keep the optimizer in bounds
+        if n_x < 0: n_x = 0
+        elif n_x > self.z_map_shape[1] - 1: n_x = self.z_map_shape[1] - 1
+        if n_y < 0 : n_y = 0
+        elif n_y > self.z_map_shape[0] - 1: n_y = self.z_map_shape[0] - 1
+        # Get the height at the new point
         n_z = self.get_z_level(n_x, n_y)
         
         # Update position on optimizer
@@ -422,7 +447,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
 
         Note: the algorithm could techincally take a very long time to converge and
         this time could be better used to compute another direction, so we let it 
-        run for at most 27 iterations (with default parameters, min step_size = about 0.48).
+        run for at most 16 iterations (with default parameters, min step_size = about 0.3).
         ---
         Input:
         -    pk: current direction (the gradient approximation) ([d_x, d_y])
@@ -435,7 +460,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         # Initialize the starting step size
         a = self.a_t
         j = 0
-        while j < 27:
+        while j <= 16:
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
