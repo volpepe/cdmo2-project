@@ -260,7 +260,7 @@ class NelderMeadOptimizer(Optimizer):
         self.xs = [ self.xb, self.xl, self.xw ]
 
     def converged(self) -> None:
-        # The convergence criterion is based on the area of the simplex
+        # The convergence criterion is based on the total size of the simplex
         return np.sum(np.abs(np.array(self.xs[:-1])-self.xs[-1])) < self.epsilon
 
     def simplex_perturbation(self) -> Tuple:

@@ -76,6 +76,21 @@ def generate_steps(actors: Dict[str,Dict], epochs: int) -> None:
             actors[actor]['history']['x'].append(x)
             actors[actor]['history']['y'].append(y)
             actors[actor]['history']['z'].append(z)
+        # At the end, print the best position found by the actor
+        if actors[actor]['optimizer_type'] == 'particle_swarm_optimizer':
+            print("After {} epochs, the algorithm {} is at ({:.2f}, {:.2f}), height {}.".format(
+                epochs, actors[actor]['optimizer_type'],
+                        np.average(actors[actor]['history']['x'][-1]), 
+                        np.average(actors[actor]['history']['y'][-1]),
+                        np.average(actors[actor]['history']['z'][-1])
+            ))
+        else:
+            print("After {} epochs, the algorithm {} is at ({:.2f}, {:.2f}), height {}.".format(
+                epochs, actors[actor]['optimizer_type'],
+                        actors[actor]['history']['x'][-1], 
+                        actors[actor]['history']['y'][-1],
+                        actors[actor]['history']['z'][-1]
+            ))
 
 
 if __name__ == '__main__':
@@ -87,5 +102,12 @@ if __name__ == '__main__':
         ACTORS[actor]['optimizer'] = ACTORS[actor]['optimizer'](z_data, STARTING_POS_AREA)
     # Compute steps for actors
     generate_steps(ACTORS, NUM_EPOCHS)
+    # Print best position for comparison
+    loc_max = np.argmax(np.array(z_data))
+    y_max = loc_max // DATA_W
+    x_max = loc_max - y_max*DATA_W
+    print("The best position is at ({}, {}), height {}".format(
+        x_max, y_max, z_data.iloc[y_max, x_max]
+    ))
     # Produce and show final animation
     show_animation(visual_data, ACTORS)
