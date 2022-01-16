@@ -54,7 +54,7 @@ def generate_steps(actors: Dict[str,Dict], epochs: int) -> None:
         if actors[actor]['optimizer_type'] == 'particle_swarm_optimizer':
             # Obtain starting position for each particle (in this particular optimizer, they are lists)
             start_x,start_y,start_z = optimizer.x, optimizer.y, \
-                [ optimizer.get_z_level(p.p[0], p.p[1]) for p in optimizer.particles ]
+                [ optimizer.get_z_level(*p.p) for p in optimizer.particles ]
         else: 
             # Obtain starting position for actor
             start_x,start_y,start_z = optimizer.x, optimizer.y, \

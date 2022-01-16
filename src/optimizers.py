@@ -11,13 +11,15 @@ from constants import *
 # - A 2D numpy array has shape [ n_rows, n_columns ] = [ height, width]. 
 #   Therefore, when indexing, if we want the x coordinate to represent 
 #   the traditional horizontal axis and the y coordinate to represent 
-#   the vertical axis, we need to flip them when indexing. 
+#   the vertical axis, we need to flip them. 
 #   For example: the height at position (x,y) is obtained from z_arr[y, x]
 # - Another unintuitive thing with coordinates is that (0,0) is in the top left
 #   corner. Therefore, growing y means "going down" in the array.
 # - To avoid putting hard constraints on the positions all the time, we make
-#   the algorithms able to index positions outside the array's boundaries.
+#   some algorithms able to index positions outside the array's boundaries.
 #   Out of bounds, the height is always -1.
+# - Line Search is the exception to the above rule, because it would be too 
+#   sensitive to huge drops in height.
 # - Most of these algorithms are very sensitive to the starting positions,
 #   therefore we don't fix the same starting position for all of them, but
 #   obtain a random initial starting position in the lowest area of the map.
@@ -37,8 +39,11 @@ class Optimizer():
 
     def in_boundaries(self, x:float, y:float) -> bool:
         """
-        Checks if a x,y position is within the boundaries of the map
+        Checks if a x,y position is within the boundaries of the map.
         """
+        # Note: x < 200 means that x can have value 199.9. x <= (200-1) means that
+        # x cannot be over 199. Therefore, to check that the position is in-bounds
+        # (can be indexed) we use the second formulation.
         return 0 <= x <= self.z_map_shape[1] - 1 and 0 <= y <= self.z_map_shape[0] - 1
 
     def get_z_level(self, x:float, y:float) -> float:
@@ -60,14 +65,12 @@ class Optimizer():
         ly = math.floor(y)
         uy = math.ceil(y)
         # Compute fix for integer coordinates (where ceil and floor are the same)
-        if ux == lx:
-            ux = lx+1
-        if uy == ly:
-            uy = ly+1
+        if ux == lx: ux = lx+1
+        if uy == ly: uy = ly+1
         # Check if upper bounds are within boundaries (lower bounds always are
         #   or we would have returned -1 before)
         if not self.in_boundaries(ux, uy):
-            # ux and uy are out of boundaries. Since lx,ly is always in-bounds,
+            # ux and uy are out of boundaries. Since (lx,ly) is always in-bounds,
             # we entrust that position.
             z1, z2, z3, z4 = self.z_map.iloc[ly, lx], -1,-1,-1
         else:
@@ -96,8 +99,10 @@ class Optimizer():
         Computes the starting point of the actor (a position in the low 
         area of the mountain, not necessarily the lowest because 
         most methods need a good initial guess to get to the
-        optima and we try to deal with this need through randomness)
+        optima and we try to deal with this need through randomness).
         ''' 
+        # Choose randomly from the array containing all positions where
+        # the height is less than min + (max-min)/100*starting_pos
         row, col = random.choice(np.argwhere(
             self.z_arr < (np.amin(self.z_arr) + 
             ((np.amax(self.z_arr) - np.amin(self.z_arr)) / 100 * self.starting_pos_area))
@@ -126,7 +131,8 @@ class RandomOptimizer(Optimizer):
     def next_step(self) -> Tuple:
         """
         The following position of the agent is found by moving the agent
-        by a random quantity in the range `[-RANDOM_MOVEMENT_RANGE, +RANDOM_MOVEMENT_RANGE]` in both axis.
+        by a random quantity in the range `[-RANDOM_MOVEMENT_RANGE, +RANDOM_MOVEMENT_RANGE]` 
+        in both axis.
         """
         # Apply update and index on z_map.
         n_x, n_y = 0, 0
@@ -134,8 +140,8 @@ class RandomOptimizer(Optimizer):
             # Compute random movements until we get one that moves the agent within
             # the map boundaries (hopefully the first one)
             move_x, move_y = random.randint(-1,1)*random.random()*RANDOM_MOVEMENT_RANGE, \
-                            random.randint(-1,1)*random.random()*RANDOM_MOVEMENT_RANGE
-            n_x, n_y =  (self.x+move_x), (self.y+move_y) 
+                             random.randint(-1,1)*random.random()*RANDOM_MOVEMENT_RANGE
+            n_x, n_y = (self.x+move_x), (self.y+move_y) 
             if self.in_boundaries(n_x, n_y):
                 break
         n_z = self.get_z_level(n_x, n_y)
@@ -213,7 +219,7 @@ class NelderMeadOptimizer(Optimizer):
         - The one having the second lowest value on the objective function is the "lousy"
         '''
         # Sort the list of simplex points by their height
-        sorted_points = sorted(self.xs, key=lambda x:self.get_z_level(x[0],x[1]))
+        sorted_points = sorted(self.xs, key=lambda x:self.get_z_level(*x))
         # Best = highest point
         self.xb = sorted_points[-1]
         # Worst = lowest point
@@ -221,9 +227,9 @@ class NelderMeadOptimizer(Optimizer):
         # Lousy = second lowest point
         self.xl = sorted_points[-2]
         # Also save the function values for those points
-        self.fb, self.fw, self.fl = self.get_z_level(self.xb[0],self.xb[1]),\
-                                    self.get_z_level(self.xw[0],self.xw[1]),\
-                                    self.get_z_level(self.xl[0],self.xl[1])
+        self.fb, self.fw, self.fl = self.get_z_level(*self.xb),\
+                                    self.get_z_level(*self.xw),\
+                                    self.get_z_level(*self.xl)
 
     def reflection(self) -> np.array:
         '''
@@ -272,13 +278,13 @@ class NelderMeadOptimizer(Optimizer):
         # REFLECT to get xr
         self.xr = self.reflection()
         #    Evaluate xr
-        fr = self.get_z_level(self.xr[0], self.xr[1])
+        fr = self.get_z_level(*self.xr)
         # FIRST CHECK: is the reflected point better than the best?
         if fr > self.fb:
             # Try performing an EXPANSION to get further in that direction.
             # Obtain xe and evaluate it
             self.xe = self.expansion()
-            fe = self.get_z_level(self.xe[0], self.xe[1])
+            fe = self.get_z_level(*self.xe)
             # Is the expanded point better than the best point?
             if fe > self.fb:
                 # Accept the expansion: xw becomes xe
@@ -306,7 +312,7 @@ class NelderMeadOptimizer(Optimizer):
             if fr < self.fw:
                 # Perform an INSIDE CONTRACTION and evaluate the new point
                 self.xc = self.contraction(inside=True)
-                fc = self.get_z_level(self.xc[0], self.xc[1])
+                fc = self.get_z_level(*self.xc)
                 # If this point is better than the worse, keep it
                 if fc > self.fw:
                     self.xw = self.xc
@@ -319,7 +325,7 @@ class NelderMeadOptimizer(Optimizer):
                 # The reflected point is slightly better than the worst
                 # Perform an OUTSIDE CONTRACTION and evaluate them
                 self.xc = self.contraction(inside=False)
-                fc = self.get_z_level(self.xc[0], self.xc[1])
+                fc = self.get_z_level(*self.xc)
                 # LAST CHECK: is the contracted point better than the reflected point?
                 if fc >= fr:
                     # If it is, keep it
@@ -332,7 +338,7 @@ class NelderMeadOptimizer(Optimizer):
 
     def get_position(self) -> Tuple:
         pos = list(np.average(np.array(self.xs), axis=0))
-        pos.append(self.get_z_level(pos[0], pos[1]))
+        pos.append(self.get_z_level(*pos))
         return tuple(pos)
 
     def next_step(self) -> Tuple:
@@ -396,7 +402,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         if not self.in_boundaries(*prx): prx = (self.z_map_shape[1]-1, self.y)
         if not self.in_boundaries(*puy): puy = (self.x, 0)
         if not self.in_boundaries(*pdy): pdy = (self.x, self.z_map_shape[0]-1)
-        # Calculate the actual h (it's usually 2*self.)
+        # Calculate the actual h (it's usually 2*self.h)
         hx = prx[0]-plx[0]
         hy = pdy[1]-puy[1]
         # Derivative in x axis: (f(x+h, y)-f(x-h, y)) / hx
@@ -409,8 +415,8 @@ class BacktrackingLineSearchOptimizer(Optimizer):
     def next_step(self) -> Tuple:
         # Compute the gradient approximation
         grad = self.gradient_approx()
-        # The "gradient" is the proposed direction of movement. Using Armijo condition we explore 
-        # what could be a good step size choice.
+        # The "gradient" is the proposed direction of movement. 
+        # Using Armijo condition we explore what could be a good step size choice.
         a = self.backtracking_algorithm(grad)
 
         # Once we have a direction, we need to scale it properly
@@ -464,8 +470,8 @@ class BacktrackingLineSearchOptimizer(Optimizer):
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
-            if  self.get_z_level(new_pos[0], new_pos[1]) >= \
-                self.get_z_level(xk[0], xk[1]) + self.c1*a*np.dot(pk.T,pk): 
+            if  self.get_z_level(*new_pos) >= \
+                self.get_z_level(*xk) + self.c1*a*np.dot(pk.T,pk): 
                 break
             else:
                 # Otherwise, reduce the step size and retry
@@ -611,7 +617,7 @@ class ParticleSwarmOptimizer(Optimizer):
             # Compute a random initial velocity
             v0 = np.random.uniform(low=-self.v0_scale, high=self.v0_scale,
                                     size=(2,))
-            # We reduce the inertia after some epochs
+            # We use the starting inertia (to be reduced after some epochs)
             w = self.w0
             # c1 and c2 are random parameters for each particles.
             # They should sum up to 1.
@@ -627,7 +633,7 @@ class ParticleSwarmOptimizer(Optimizer):
         # Step 1: Gather all particles positions
         positions = [ p.get_pos() for p in self.particles ]
         # Step 2: Compute height of each particle
-        heights = [ self.get_z_level(p[0], p[1]) for p in positions ]
+        heights = [ self.get_z_level(*p) for p in positions ]
         # Step 3: Get best particle position as argmax of heights
         best_pos = positions[np.argmax(heights)]
         # Step 4: Update the inertia of all particles if necessary
@@ -638,7 +644,7 @@ class ParticleSwarmOptimizer(Optimizer):
             # Step 6: Obtain the new positions of the particle
             new_position = particle.get_pos()
             # Step 7: Get height of new position
-            new_height = self.get_z_level(new_position[0], new_position[1])
+            new_height = self.get_z_level(*new_position)
             # Step 8: Compare heights: if new one is better, update particle's 
             #   best position
             if new_height > heights[i]:
@@ -648,5 +654,5 @@ class ParticleSwarmOptimizer(Optimizer):
         self.y = [ p.get_pos()[1] for p in self.particles ]
         # Update epochs counter
         self.epochs_counter += 1
-        return (self.x, self.y, [ self.get_z_level(p.p[0], p.p[1]) for p in self.particles ])
+        return (self.x, self.y, [ self.get_z_level(*p.p) for p in self.particles ])
 
