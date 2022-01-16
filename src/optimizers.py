@@ -463,6 +463,8 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         '''
         # Get the current position into an array
         xk = np.array([self.x, self.y])
+        # Get current height so we don't have to calculate it multiple times
+        fk = self.get_z_level(*xk)
         # Initialize the starting step size
         a = self.a_t
         j = 0
@@ -470,8 +472,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
-            if  self.get_z_level(*new_pos) >= \
-                self.get_z_level(*xk) + self.c1*a*np.dot(pk.T,pk): 
+            if  self.get_z_level(*new_pos) >= fk + self.c1*a*np.dot(pk.T,pk): 
                 break
             else:
                 # Otherwise, reduce the step size and retry
