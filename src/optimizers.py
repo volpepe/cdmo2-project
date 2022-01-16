@@ -1,6 +1,5 @@
 from typing import List, Tuple
 import random
-import pandas as pd
 import numpy as np
 import math
 
@@ -28,10 +27,9 @@ class Optimizer():
     '''
     Base class for all optimizers.
     '''
-    def __init__(self, z_map:pd.DataFrame, starting_pos_area:float=10) -> None:
-        self.z_map = z_map
-        self.z_arr = np.array(self.z_map)
-        self.z_map_shape = self.z_map.shape
+    def __init__(self, z_arr:np.array, starting_pos_area:float=10) -> None:
+        self.z_arr = z_arr
+        self.z_arr_shape = self.z_arr.shape
         self.starting_pos_area = starting_pos_area
         start_x, start_y, _ = self.get_starting_point()
         self.x = start_x
@@ -44,7 +42,7 @@ class Optimizer():
         # Note: x < 200 means that x can have value 199.9. x <= (200-1) means that
         # x cannot be over 199. Therefore, to check that the position is in-bounds
         # (can be indexed) we use the second formulation.
-        return 0 <= x <= self.z_map_shape[1] - 1 and 0 <= y <= self.z_map_shape[0] - 1
+        return 0 <= x <= self.z_arr_shape[1] - 1 and 0 <= y <= self.z_arr_shape[0] - 1
 
     def get_z_level(self, x:float, y:float) -> float:
         '''
@@ -52,13 +50,13 @@ class Optimizer():
         using bilinear interpolation for approximating its value.
         If the point is out of boundaries, its height level is automatically set to -1.
         '''
-        # Note that on z_map dataframe y refers to the row and x to the column.
+        # Note that on z_arr array, y refers to the row and x to the column.
         if not self.in_boundaries(x, y):
             # If the point is not in boundaries, its height is -1.
             return -1
         if int(x) == x and int(y) == y:
             # Shortcut if both coordinates are int
-            return self.z_map.iloc[int(y),int(x)]
+            return self.z_arr[int(y),int(x)]
         # Compute coordinates and height of surrounding exact positions
         lx = math.floor(x)
         ux = math.ceil(x)
@@ -72,10 +70,10 @@ class Optimizer():
         if not self.in_boundaries(ux, uy):
             # ux and uy are out of boundaries. Since (lx,ly) is always in-bounds,
             # we entrust that position.
-            z1, z2, z3, z4 = self.z_map.iloc[ly, lx], -1,-1,-1
+            z1, z2, z3, z4 = self.z_arr[ly, lx], -1,-1,-1
         else:
-            z1, z2, z3, z4 = self.z_map.iloc[ly, lx], self.z_map.iloc[ly, ux],\
-                             self.z_map.iloc[uy, lx], self.z_map.iloc[uy, ux]
+            z1, z2, z3, z4 = self.z_arr[ly, lx], self.z_arr[ly, ux],\
+                             self.z_arr[uy, lx], self.z_arr[uy, ux]
         # Interpolate between upper and lower points (weighted sum of influences)
         # z1 -----r1------ z2
         # (lx,ly)  |  (ux,ly) 
@@ -108,8 +106,8 @@ class Optimizer():
             ((np.amax(self.z_arr) - np.amin(self.z_arr)) / 100 * self.starting_pos_area))
         ))
         # Old code, used to calculate the minimum point
-        #col = np.argmin(self.z_arr) % self.z_map_shape[1]
-        #row = math.floor(np.argmin(self.z_arr) / self.z_map_shape[1])
+        #col = np.argmin(self.z_arr) % self.z_arr_shape[1]
+        #row = math.floor(np.argmin(self.z_arr) / self.z_arr_shape[1])
         # Return inverted because we want coordinates
         return (col, row, self.z_arr[row,col])
 
@@ -134,7 +132,7 @@ class RandomOptimizer(Optimizer):
         by a random quantity in the range `[-RANDOM_MOVEMENT_RANGE, +RANDOM_MOVEMENT_RANGE]` 
         in both axis.
         """
-        # Apply update and index on z_map.
+        # Apply update and index on z_arr.
         n_x, n_y = 0, 0
         while True:
             # Compute random movements until we get one that moves the agent within
@@ -176,10 +174,10 @@ class NelderMeadOptimizer(Optimizer):
     - epsilon is a threshold on the size of the area of the simplex
         when we check for convergence (default: 0.1).
     '''
-    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float,
+    def __init__(self, z_arr: np.array, starting_pos_area:float,
                 c:float=NELDER_MEAD_C, alpha:float=1, gamma:float=1, 
                 beta:float=0.5, rho:float=0.8, epsilon:float=0.1) -> None:
-        super().__init__(z_map, starting_pos_area)
+        super().__init__(z_arr, starting_pos_area)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -376,10 +374,10 @@ class BacktrackingLineSearchOptimizer(Optimizer):
     - a_t: Starting step size to be iteratively decreased until Armijo condition is respected 
         (default: see LINE_SEARCH_START_A).
     '''
-    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float,
+    def __init__(self, z_arr: np.array, starting_pos_area:float,
                  h:float=LINE_SEARCH_H, c1:float=10**-4, p:float=0.5, 
                  a_t:float=LINE_SEARCH_START_A) -> None:
-        super().__init__(z_map, starting_pos_area)
+        super().__init__(z_arr, starting_pos_area)
         self.h = h
         self.c1 = c1
         self.p = p
@@ -399,9 +397,9 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         pdy = (self.x, self.y+self.h)
         # If they're not in bounds, correct them accordingly
         if not self.in_boundaries(*plx): plx = (0, self.y)
-        if not self.in_boundaries(*prx): prx = (self.z_map_shape[1]-1, self.y)
+        if not self.in_boundaries(*prx): prx = (self.z_arr_shape[1]-1, self.y)
         if not self.in_boundaries(*puy): puy = (self.x, 0)
-        if not self.in_boundaries(*pdy): pdy = (self.x, self.z_map_shape[0]-1)
+        if not self.in_boundaries(*pdy): pdy = (self.x, self.z_arr_shape[0]-1)
         # Calculate the actual h (it's usually 2*self.h)
         hx = prx[0]-plx[0]
         hy = pdy[1]-puy[1]
@@ -424,9 +422,9 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         n_y = self.y + a*grad[1]
         # Keep the optimizer in bounds
         if n_x < 0: n_x = 0
-        elif n_x > self.z_map_shape[1] - 1: n_x = self.z_map_shape[1] - 1
+        elif n_x > self.z_arr_shape[1] - 1: n_x = self.z_arr_shape[1] - 1
         if n_y < 0 : n_y = 0
-        elif n_y > self.z_map_shape[0] - 1: n_y = self.z_map_shape[0] - 1
+        elif n_y > self.z_arr_shape[0] - 1: n_y = self.z_arr_shape[0] - 1
         # Get the height at the new point
         n_z = self.get_z_level(n_x, n_y)
         
@@ -582,10 +580,10 @@ class ParticleSwarmOptimizer(Optimizer):
     - v0_scale: The scale for the initial velocity of the particles, which will be a random
         vector of elements in [-v0_scale, v0_scale]
     '''
-    def __init__(self, z_map: pd.DataFrame, starting_pos_area:float, 
+    def __init__(self, z_arr: np.array, starting_pos_area:float, 
                  n_particles: int=20, w0: float=PSO_INERTIA, 
                  v0_scale: float=PSO_V0_SCALE) -> None:
-        super().__init__(z_map, starting_pos_area)
+        super().__init__(z_arr, starting_pos_area)
         self.N = n_particles
         self.particles:List[Particle] = []
         self.w0 = w0

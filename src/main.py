@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 import pandas as pd
 import numpy as np
 import random
@@ -14,15 +14,17 @@ from src.graphics import show_animation
 from src.actors import ACTORS
 from src.constants import *
 
-def get_extension(filename:str):
+def get_extension(filename:str) -> str:
     '''
     Returns file extension.
     '''
     return filename.split('.')[-1]
 
-def open_file(filename:str):
+def open_file(filename:str) -> Tuple[np.array, pd.DataFrame]:
     '''
-    Opens a tif or csv file containing a mountain (represented as a 2D array)
+    Opens a tif or csv file containing a mountain (represented as a 2D array).
+
+    Returns a numpy array containing the heights and a reduced Dataframe for visualization.
     '''
     ext = get_extension(filename)
 
@@ -36,7 +38,7 @@ def open_file(filename:str):
     # Reshape images to the common format
     z_array = np.array(z_im.resize((DATA_W, DATA_H)))
     # Create a dataframe from rescaled features (range [0,MAX_HEIGHT])
-    z_data = pd.DataFrame(z_array / np.max(z_array) * MAX_HEIGHT)
+    z_data = z_array / np.max(z_array) * MAX_HEIGHT
     # Resize the data by interpolation to obtain a grid that can
     # be displayed more easily (also height-rescaled)
     visual_grid = pd.DataFrame(np.array(z_im.resize(
@@ -103,11 +105,11 @@ if __name__ == '__main__':
     # Compute steps for actors
     generate_steps(ACTORS, NUM_EPOCHS)
     # Print best position for comparison
-    loc_max = np.argmax(np.array(z_data))
+    loc_max = np.argmax(z_data)
     y_max = loc_max // DATA_W
     x_max = loc_max - y_max*DATA_W
     print("The best position is at ({}, {}), height {}".format(
-        x_max, y_max, z_data.iloc[y_max, x_max]
+        x_max, y_max, z_data[y_max, x_max]
     ))
     # Produce and show final animation
     show_animation(visual_data, ACTORS)
