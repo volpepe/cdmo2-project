@@ -105,9 +105,6 @@ class Optimizer():
             self.z_arr < (np.amin(self.z_arr) + 
             ((np.amax(self.z_arr) - np.amin(self.z_arr)) / 100 * self.starting_pos_area))
         ))
-        # Old code, used to calculate the minimum point
-        #col = np.argmin(self.z_arr) % self.z_arr_shape[1]
-        #row = math.floor(np.argmin(self.z_arr) / self.z_arr_shape[1])
         # Return inverted because we want coordinates
         return (col, row, self.z_arr[row,col])
 
@@ -461,8 +458,9 @@ class BacktrackingLineSearchOptimizer(Optimizer):
         '''
         # Get the current position into an array
         xk = np.array([self.x, self.y])
-        # Get current height so we don't have to calculate it multiple times
+        # Get current height and dot product so we don't have to calculate it multiple times
         fk = self.get_z_level(*xk)
+        dot_p = np.dot(pk.T, pk)
         # Initialize the starting step size
         a = self.a_t
         j = 0
@@ -470,7 +468,7 @@ class BacktrackingLineSearchOptimizer(Optimizer):
             # Compute the new position 
             new_pos = xk+a*pk
             # Armijo condition: if respected we have found a good step size
-            if  self.get_z_level(*new_pos) >= fk + self.c1*a*np.dot(pk.T,pk): 
+            if  self.get_z_level(*new_pos) >= fk + self.c1*a*dot_p: 
                 break
             else:
                 # Otherwise, reduce the step size and retry
@@ -638,9 +636,9 @@ class ParticleSwarmOptimizer(Optimizer):
         # Step 4: Update the inertia of all particles if necessary
         for i, particle in enumerate(self.particles):
             particle.change_inertia(self.inertia_scheduler())
-            # Step 5: Ask every particle to compute a step
+            # Step 5: Ask every particle to compute a step passing the best position
             particle.compute_update(best_pos)
-            # Step 6: Obtain the new positions of the particle
+            # Step 6: Obtain the new position of the particle
             new_position = particle.get_pos()
             # Step 7: Get height of new position
             new_height = self.get_z_level(*new_position)
